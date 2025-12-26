@@ -14,14 +14,11 @@ COMPANY_NAME = os.getenv("COMPANY_NAME", "ACME Motors")
 COMPANY_SUPPORT_EMAIL = os.getenv("COMPANY_SUPPORT_EMAIL", "support@acme.example")
 COMPANY_SUPPORT_PHONE = os.getenv("COMPANY_SUPPORT_PHONE", "+34 600 000 000")
 
-# LLM
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# Vector DB
 CHROMA_DIR = os.getenv("CHROMA_DIR", "chromadb")
 COLLECTION_NAME = os.getenv("COLLECTION_NAME", "docs")
 
-# Issue tracker: GitHub Issues (default)
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_REPO = os.getenv("GITHUB_REPO")
 
@@ -46,7 +43,6 @@ def create_support_ticket(user_name: str, user_email: str, summary: str, descrip
 
     data = r.json()
     return {"ok": True, "ticket_url": data.get("html_url"), "ticket_number": data.get("number")}
-
 
 
 st.set_page_config(page_title="Customer Support AI", page_icon="💬", layout="wide")
@@ -84,7 +80,6 @@ You must:
 """
 
 def render_citations(cites):
-    # cites is list of {source, page}
     uniq = []
     for c in cites:
         key = (c.get("source"), c.get("page"))
@@ -119,21 +114,17 @@ if "messages" not in st.session_state:
 
 # Display conversation
 for m in st.session_state["messages"]:
-    if m["role"] in ("user", "assistant"):
+    if m.get("role") in ("user", "assistant"):
         with st.chat_message(m["role"]):
-            st.markdown(m["content"])
+            st.markdown(m.get("content", ""))
 
 user_prompt = st.chat_input("Ask a question…")
 
 if user_prompt:
     st.session_state["messages"].append({"role": "user", "content": user_prompt})
-
-    # Retrieve context
     chunks = retrieve(user_prompt, k=6)
     context_text, cites = format_context(chunks)
     not_found = should_offer_ticket(chunks)
-
-    # Add a “hidden” assistant message with context for the LLM
     augmented_user = f"""User question:
 {user_prompt}
 
@@ -155,35 +146,44 @@ If not found, say you couldn't find it and suggest creating a ticket.
 
     msg = resp.choices[0].message
 
-    # If tool call happens
+    st.session_state["messages"].append(msg.model_dump())
+
     if msg.tool_calls:
         for tc in msg.tool_calls:
             fn = tc.function.name
             args = json.loads(tc.function.arguments or "{}")
 
             if fn == "create_support_ticket":
-                # Fill missing user details if possible
                 args.setdefault("user_name", st.session_state.get("user_name", ""))
                 args.setdefault("user_email", st.session_state.get("user_email", ""))
-                print(args)
+
                 result = create_support_ticket(**args)
-                print(result)
+
                 st.session_state["messages"].append(
-                    {"role": "tool", "tool_call_id": tc.id, "name": fn, "content": json.dumps(result)}
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "name": fn,
+                        "content": json.dumps(result),
+                    }
+                )
+            else:
+                st.session_state["messages"].append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "name": fn,
+                        "content": json.dumps({"ok": False, "error": f"Unknown tool: {fn}"}),
+                    }
                 )
 
-        print('!!!!!!')
-        print(st.session_state["messages"])
-        # Final answer after tool execution
         resp2 = client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=st.session_state["messages"] + [{"role": "user", "content": augmented_user}],
-            tools=TOOLS,
-            tool_choice="auto",
+            messages=st.session_state["messages"],
             temperature=0.2,
         )
 
-        final = resp2.choices[0].message.content
+        final = resp2.choices[0].message.content or ""
         st.session_state["messages"].append({"role": "assistant", "content": final})
 
         with st.chat_message("assistant"):
@@ -191,11 +191,9 @@ If not found, say you couldn't find it and suggest creating a ticket.
 
     else:
         answer = msg.content or ""
-        # If heuristic says not found and model didn’t suggest it, add hint
         if not_found and "ticket" not in answer.lower():
             answer += "\n\nI couldn’t find this in the documents. If you want, I can create a support ticket."
 
-        # Add explicit citation block (even if model already cited inline)
         if cites and any(c.get("source") for c in cites):
             answer += "\n\n**Sources:**\n" + render_citations(cites)
 
