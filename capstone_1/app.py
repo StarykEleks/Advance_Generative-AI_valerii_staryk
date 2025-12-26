@@ -1,11 +1,11 @@
 import json
 import os
+import requests
 
 import streamlit as st
 from openai import OpenAI
 
 from rag import retrieve, format_context, should_offer_ticket
-from tools import create_support_ticket, get_company_info
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -24,6 +24,30 @@ COLLECTION_NAME = os.getenv("COLLECTION_NAME", "docs")
 # Issue tracker: GitHub Issues (default)
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_REPO = os.getenv("GITHUB_REPO")
+
+
+def create_support_ticket(user_name: str, user_email: str, summary: str, description: str):
+    url = f"https://api.github.com/repos/StarykEleks/{GITHUB_REPO}/issues"
+    headers = {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github+json",
+    }
+    body = f"""**User name:** {user_name}
+    **User email:** {user_email}
+
+    ---
+    
+    {description}
+    """
+    payload = {"title": summary, "body": body, "labels": ["support-ticket"]}
+    r = requests.post(url, headers=headers, json=payload, timeout=30)
+    if r.status_code >= 300:
+        return {"ok": False, "error": f"GitHub API error {r.status_code}: {r.text}"}
+
+    data = r.json()
+    return {"ok": True, "ticket_url": data.get("html_url"), "ticket_number": data.get("number")}
+
+
 
 st.set_page_config(page_title="Customer Support AI", page_icon="💬", layout="wide")
 
@@ -46,14 +70,6 @@ TOOLS = [
                 },
                 "required": ["user_name", "user_email", "summary", "description"],
             },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_company_info",
-            "description": "Get company name and contact info (email, phone).",
-            "parameters": {"type": "object", "properties": {}},
         },
     },
 ]
@@ -93,11 +109,10 @@ with st.sidebar:
     st.session_state["user_name"] = user_name
     st.session_state["user_email"] = user_email
 
-    info = get_company_info()
     st.markdown("### Company info")
-    st.write(info["company_name"])
-    st.write(info["support_email"])
-    st.write(info["support_phone"])
+    st.write(COMPANY_NAME)
+    st.write(COMPANY_SUPPORT_EMAIL)
+    st.write(COMPANY_SUPPORT_PHONE)
 
 if "messages" not in st.session_state:
     st.session_state["messages"] = [{"role": "system", "content": SYSTEM}]
@@ -122,9 +137,6 @@ if user_prompt:
     augmented_user = f"""User question:
 {user_prompt}
 
-Company info:
-{json.dumps(get_company_info(), ensure_ascii=False)}
-
 Context (may be empty or irrelevant):
 {context_text}
 
@@ -133,7 +145,6 @@ If you use the context, include citations as: (Source: filename p.X) in the answ
 If not found, say you couldn't find it and suggest creating a ticket.
 """
 
-    # Call LLM with tools
     resp = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=st.session_state["messages"] + [{"role": "user", "content": augmented_user}],
@@ -154,18 +165,24 @@ If not found, say you couldn't find it and suggest creating a ticket.
                 # Fill missing user details if possible
                 args.setdefault("user_name", st.session_state.get("user_name", ""))
                 args.setdefault("user_email", st.session_state.get("user_email", ""))
-
+                print(args)
                 result = create_support_ticket(**args)
+                print(result)
                 st.session_state["messages"].append(
                     {"role": "tool", "tool_call_id": tc.id, "name": fn, "content": json.dumps(result)}
                 )
 
+        print('!!!!!!')
+        print(st.session_state["messages"])
         # Final answer after tool execution
         resp2 = client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=st.session_state["messages"],
+            messages=st.session_state["messages"] + [{"role": "user", "content": augmented_user}],
+            tools=TOOLS,
+            tool_choice="auto",
             temperature=0.2,
         )
+
         final = resp2.choices[0].message.content
         st.session_state["messages"].append({"role": "assistant", "content": final})
 

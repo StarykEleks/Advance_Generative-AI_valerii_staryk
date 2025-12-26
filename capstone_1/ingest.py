@@ -75,7 +75,7 @@ def ingest(data_dir="data"):
 
     embeddings = embedder.encode(docs, show_progress_bar=True).tolist()
 
-    MAX_BATCH = 10000
+    MAX_BATCH = 5000
     for start in range(0, len(ids), MAX_BATCH):
         end = start + MAX_BATCH
         col.upsert(
