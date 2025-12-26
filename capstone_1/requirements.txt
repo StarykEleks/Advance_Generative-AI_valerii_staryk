@@ -1,0 +1,10 @@
+streamlit
+openai
+chromadb
+pypdf
+sentence_transformers
+numpy==1.26.4
+python-dotenv==1.0.1
+tiktoken
+load_dotenv
+requests==2.32.3
