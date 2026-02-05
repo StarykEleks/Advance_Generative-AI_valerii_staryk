@@ -1,20 +1,11 @@
-virtual env
-``python3 -m venv .venv
-``
 
-to activate env
-``source .venv/bin/activate
-``
+Link for the deployed project https://huggingface.co/spaces/valeriiStaryk/AdvanceGenAI_capstone_1
 
-install dependecies
+Repo:
+https://huggingface.co/spaces/valeriiStaryk/AdvanceGenAI_capstone_1/tree/main 
 
-``pip install -r requirements.txt``
+Issue created: https://github.com/StarykEleks/Advance_Generative-AI_valerii_staryk/issues
 
+![img.png](img.png)
+![img_1.png](img_1.png)
 
-to run locally  
-``streamlit run app.py``
-python ingest.py
-python -m streamlit run app.py
-
-export ANONYMIZED_TELEMETRY=false
-please use python 3.12
